@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Il Nespolo che Cresce — AR</title>
+<title>Il Bosco che Cresce — AR</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -53,28 +53,14 @@
     top: 0; left: 0; right: 0; bottom: 0;
     background: #87CEEB;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     color: white;
     font-size: 16px;
     z-index: 100;
+    gap: 8px;
   }
-
-  #ar-not-supported {
-    position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(0,0,0,0.9);
-    color: white;
-    display: none;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    padding: 32px;
-    z-index: 200;
-  }
-  #ar-not-supported h2 { margin-bottom: 12px; }
-  #ar-not-supported p { line-height: 1.6; opacity: 0.85; max-width: 400px; }
 
   #ar-instructions {
     position: fixed;
@@ -91,27 +77,42 @@
     z-index: 10;
     display: none;
   }
+
+  #debug-overlay {
+    display: none;
+    position: fixed;
+    top: 70px;
+    left: 8px;
+    right: 8px;
+    background: rgba(0,0,0,0.75);
+    color: #0f0;
+    font-size: 10px;
+    padding: 8px;
+    border-radius: 8px;
+    z-index: 50;
+    font-family: monospace;
+    max-height: 120px;
+    overflow-y: auto;
+  }
 </style>
 </head>
 <body>
 
-<div id="loading">Caricamento dell'albero...</div>
+<div id="loading">
+  <div>🌳 Caricamento della foresta...</div>
+  <div id="loading-detail" style="font-size:12px; opacity:0.8;"></div>
+</div>
 <div id="canvas-container"></div>
 
 <div id="info-panel">
-  <h1>🌳 Il Nespolo che Cresce</h1>
+  <h1>🌳 Il Bosco che Cresce</h1>
   <p id="info-text">Trascina per ruotare, scorri per zoomare. Su smartphone, tocca il pulsante AR per vivere l'esperienza nello spazio reale.</p>
 </div>
 
-<div id="ar-instructions">Punta il telefono verso il pavimento e tocca lo schermo per piantare l'albero</div>
-<div id="debug-overlay" style="display:none; position:fixed; top:70px; left:8px; right:8px; background:rgba(255,0,0,0.85); color:white; font-size:11px; padding:8px; border-radius:8px; z-index:50; font-family:monospace;"></div>
+<div id="ar-instructions">Punta il telefono verso il pavimento e tocca lo schermo per piantare la foresta</div>
+<div id="debug-overlay"></div>
 
 <button id="replay-btn" onclick="restartGrowth()">↻ Rivivi la crescita</button>
-
-<div id="ar-not-supported">
-  <h2>Realtà Aumentata non disponibile</h2>
-  <p>Il tuo dispositivo o browser non supporta WebXR. Prova con Chrome su Android o Safari su iOS aggiornati. Nel frattempo puoi comunque esplorare l'albero in 3D.</p>
-</div>
 
 <script type="importmap">
 {
@@ -138,7 +139,7 @@ scene.background = new THREE.Color(0x87CEEB);
 const camera = new THREE.PerspectiveCamera(
   50, window.innerWidth / window.innerHeight, 0.01, 100
 );
-camera.position.set(4, 3, 5);
+camera.position.set(8, 5, 10);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -148,7 +149,7 @@ renderer.xr.enabled = true;
 document.getElementById('canvas-container').appendChild(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(0, 1.2, 0);
+controls.target.set(0, 1.5, 0);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 
@@ -157,17 +158,17 @@ const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
 scene.add(ambientLight);
 
 const sunLight = new THREE.DirectionalLight(0xfff4e0, 1.8);
-sunLight.position.set(5, 8, 4);
+sunLight.position.set(10, 15, 8);
 sunLight.castShadow = true;
 sunLight.shadow.mapSize.set(1024, 1024);
-sunLight.shadow.camera.left = -5;
-sunLight.shadow.camera.right = 5;
-sunLight.shadow.camera.top = 5;
-sunLight.shadow.camera.bottom = -5;
+sunLight.shadow.camera.left = -15;
+sunLight.shadow.camera.right = 15;
+sunLight.shadow.camera.top = 15;
+sunLight.shadow.camera.bottom = -15;
 scene.add(sunLight);
 
 // ── PIANO TERRA solo per preview desktop — nascosto in AR ────────────────
-const groundGeo = new THREE.PlaneGeometry(20, 20);
+const groundGeo = new THREE.PlaneGeometry(30, 30);
 const groundMat = new THREE.MeshStandardMaterial({ color: 0x4a7c3a, roughness: 0.95 });
 const previewGround = new THREE.Mesh(groundGeo, groundMat);
 previewGround.rotation.x = -Math.PI / 2;
@@ -175,56 +176,138 @@ previewGround.receiveShadow = true;
 scene.add(previewGround);
 
 // ════════════════════════════════════════════════════════════════════════
-// GRUPPO ALBERO — verrà posizionato dove l'utente tocca in AR
+// COSTANTI DI CONFIGURAZIONE — Foresta
 // ════════════════════════════════════════════════════════════════════════
 
-const treeAnchor = new THREE.Group();
-treeAnchor.matrixAutoUpdate = false; // controlliamo la matrice manualmente dall'anchor XR
-
-// Scala dell'albero — 3x più grande per una presenza più imponente in AR
 const TREE_SCALE = 3.0;
-scene.add(treeAnchor);
+const TREE_COUNT = 20;
+const FOREST_RADIUS = 6.0;       // raggio area distribuzione (in unità mondo, post-scala concettuale)
+const CLEARING_RADIUS = 1.2;     // radura centrale vuota
+const MIN_TREE_DISTANCE = 1.6;   // distanza minima tra alberi (prima della scala)
+const DELAY_STEP = 0.35;         // secondi tra l'inizio di un albero e il successivo
+const RANDOM_SEED = 42;
 
-const loader = new GLTFLoader();
-let treeRoot = null;
-let trunk = null;
-let branches = [];
-let spheres = [];
-let modelLoaded = false;
+// ════════════════════════════════════════════════════════════════════════
+// RNG SEEDATO — per distribuzione riproducibile
+// ════════════════════════════════════════════════════════════════════════
 
-const MODEL_PATH = 'models/Tree_01.glb';
+function mulberry32(seed) {
+  return function() {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const rng = mulberry32(RANDOM_SEED);
 
-loader.load(
-  MODEL_PATH,
-  (gltf) => {
-    treeRoot = gltf.scene;
-    treeRoot.traverse((child) => {
-      if (child.isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
-      }
-    });
-    treeRoot.scale.set(TREE_SCALE, TREE_SCALE, TREE_SCALE);
-    treeAnchor.add(treeRoot);
-    classifyParts(treeRoot);
-    modelLoaded = true;
-    document.getElementById('loading').style.display = 'none';
-    startGrowth();
-  },
-  (xhr) => {
-    const percent = Math.round((xhr.loaded / xhr.total) * 100);
-    document.getElementById('loading').textContent = `Caricamento dell'albero... ${percent}%`;
-  },
-  (error) => {
-    document.getElementById('loading').textContent = 'Errore nel caricamento del modello.';
-    console.error('Errore caricamento GLB:', error);
+// ════════════════════════════════════════════════════════════════════════
+// GENERAZIONE POSIZIONI ALBERI — distribuzione organica Poisson-disc semplificata
+// ════════════════════════════════════════════════════════════════════════
+
+function generateTreePositions(count, radius, clearing, minDist) {
+  const positions = [];
+  let attempts = 0;
+  const maxAttempts = count * 40;
+
+  while (positions.length < count && attempts < maxAttempts) {
+    attempts++;
+    const angle = rng() * Math.PI * 2;
+    const r = Math.sqrt(rng()) * radius;
+    const x = Math.cos(angle) * r;
+    const z = Math.sin(angle) * r;
+
+    if (Math.sqrt(x * x + z * z) < clearing) continue;
+
+    let tooClose = false;
+    for (const p of positions) {
+      const dx = p.x - x, dz = p.z - z;
+      if (Math.sqrt(dx * dx + dz * dz) < minDist) { tooClose = true; break; }
+    }
+    if (!tooClose) positions.push({ x, z });
   }
+
+  // Ordino dal centro verso l'esterno — la crescita si espande come un'onda
+  positions.sort((a, b) => Math.hypot(a.x, a.z) - Math.hypot(b.x, b.z));
+  return positions;
+}
+
+const treePositions = generateTreePositions(
+  TREE_COUNT, FOREST_RADIUS, CLEARING_RADIUS, MIN_TREE_DISTANCE
 );
 
-function classifyParts(root) {
-  trunk = null;
-  branches = [];
-  spheres = [];
+// ════════════════════════════════════════════════════════════════════════
+// GRUPPO RADICE — verrà posizionato dove l'utente tocca in AR
+// ════════════════════════════════════════════════════════════════════════
+
+const forestAnchor = new THREE.Group();
+forestAnchor.matrixAutoUpdate = false; // controllata manualmente dall'anchor XR
+scene.add(forestAnchor);
+
+// Sotto-gruppo per tutti gli elementi della foresta — qui la scala è libera
+const forestContent = new THREE.Group();
+forestAnchor.add(forestContent);
+
+// ════════════════════════════════════════════════════════════════════════
+// CARICAMENTO ASSET
+// ════════════════════════════════════════════════════════════════════════
+
+const loader = new GLTFLoader();
+const ASSETS = {
+  tree:        'models/Tree_01.glb',
+  grass:       'models/Grass_Plane.glb',
+  flowers:     'models/Flowers.glb',
+  butterflies: 'models/Butterflies.glb',
+  bees:        'models/Bees.glb',
+};
+
+const loadedAssets = {};
+let assetsToLoad = Object.keys(ASSETS).length;
+let assetsLoaded = 0;
+let allAssetsReady = false;
+
+const treeInstances = [];   // { root, trunk, branches[], spheres[], delay }
+let flowerObjs = [];
+let butterflyObjs = [];
+let beeObjs = [];
+
+function updateLoadingProgress(name) {
+  assetsLoaded++;
+  document.getElementById('loading-detail').textContent =
+    `${assetsLoaded}/${assetsToLoad} elementi caricati (${name})`;
+  if (assetsLoaded >= assetsToLoad) {
+    document.getElementById('loading').style.display = 'none';
+    allAssetsReady = true;
+    buildForest();
+  }
+}
+
+for (const [key, path] of Object.entries(ASSETS)) {
+  loader.load(
+    path,
+    (gltf) => {
+      loadedAssets[key] = gltf.scene;
+      gltf.scene.traverse((c) => {
+        if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; }
+      });
+      updateLoadingProgress(key);
+    },
+    undefined,
+    (err) => {
+      console.error(`Errore caricamento ${key}:`, err);
+      updateLoadingProgress(key + ' [ERRORE]');
+    }
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// COSTRUZIONE DELLA FORESTA — istanzia tutti gli elementi
+// ════════════════════════════════════════════════════════════════════════
+
+function classifyTreeParts(root) {
+  let trunk = null;
+  const branches = [];
+  const spheres = [];
 
   root.traverse((child) => {
     if (!child.isMesh) return;
@@ -234,31 +317,122 @@ function classifyParts(root) {
     else if (name.includes('sphere')) spheres.push(child);
   });
 
-  const distFromCenter = (obj) => Math.sqrt(obj.position.x ** 2 + obj.position.z ** 2);
+  const distFromCenter = (o) => Math.sqrt(o.position.x ** 2 + o.position.z ** 2);
   branches.sort((a, b) => distFromCenter(a) - distFromCenter(b));
-  spheres.sort((a, b) => a.position.y - b.position.y);
+  spheres.sort((a, b) => a.position.y - b.position.y); // dal basso verso l'alto
+
+  return { trunk, branches, spheres };
+}
+
+function buildForest() {
+  // ── ERBA ──────────────────────────────────────────────────────────────
+  if (loadedAssets.grass) {
+    const grass = loadedAssets.grass.clone();
+    grass.scale.set(TREE_SCALE, TREE_SCALE, TREE_SCALE);
+    forestContent.add(grass);
+  }
+
+  // ── ALBERI — uno per posizione generata ─────────────────────────────────
+  if (loadedAssets.tree) {
+    treePositions.forEach((pos, i) => {
+      const treeClone = loadedAssets.tree.clone(true);
+
+      // Clono anche le mesh per evitare condivisione di geometria/scala tra istanze
+      treeClone.traverse((child) => {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+
+      treeClone.scale.set(TREE_SCALE, TREE_SCALE, TREE_SCALE);
+      treeClone.position.set(pos.x * TREE_SCALE, 0, pos.z * TREE_SCALE);
+      treeClone.rotation.y = rng() * Math.PI * 2;
+
+      const scaleVariation = 0.8 + rng() * 0.4; // 0.8 - 1.2
+      treeClone.scale.multiplyScalar(scaleVariation);
+
+      forestContent.add(treeClone);
+
+      const parts = classifyTreeParts(treeClone);
+      treeInstances.push({
+        ...parts,
+        delay: i * DELAY_STEP,
+      });
+    });
+  }
+
+  // ── FIORI ─────────────────────────────────────────────────────────────
+  if (loadedAssets.flowers) {
+    const flowers = loadedAssets.flowers.clone(true);
+    flowers.scale.set(TREE_SCALE, TREE_SCALE, TREE_SCALE);
+    forestContent.add(flowers);
+    flowerObjs = [];
+    flowers.traverse((child) => {
+      if (child.isMesh) flowerObjs.push(child);
+    });
+  }
+
+  // ── FARFALLE — 2 gruppi distribuiti sull'area ───────────────────────────
+  butterflyObjs = [];
+  if (loadedAssets.butterflies) {
+    for (let g = 0; g < 2; g++) {
+      const bfGroup = loadedAssets.butterflies.clone(true);
+      bfGroup.scale.set(TREE_SCALE, TREE_SCALE, TREE_SCALE);
+      forestContent.add(bfGroup);
+      bfGroup.traverse((child) => {
+        if (child.isMesh) {
+          const angle = rng() * Math.PI * 2;
+          const r = (2 + rng() * (FOREST_RADIUS - 2));
+          butterflyObjs.push({
+            mesh: child,
+            home: new THREE.Vector3(Math.cos(angle) * r, 0, Math.sin(angle) * r),
+            delay: 6 + g * 3 + butterflyObjs.length * 1.5,
+          });
+        }
+      });
+    }
+  }
+
+  // ── API — 2 gruppi distribuiti sull'area ────────────────────────────────
+  beeObjs = [];
+  if (loadedAssets.bees) {
+    for (let g = 0; g < 2; g++) {
+      const beeGroup = loadedAssets.bees.clone(true);
+      beeGroup.scale.set(TREE_SCALE, TREE_SCALE, TREE_SCALE);
+      forestContent.add(beeGroup);
+      beeGroup.traverse((child) => {
+        if (child.isMesh) {
+          const angle = rng() * Math.PI * 2;
+          const r = (1.5 + rng() * (FOREST_RADIUS - 1.5));
+          beeObjs.push({
+            mesh: child,
+            home: new THREE.Vector3(Math.cos(angle) * r, 0, Math.sin(angle) * r),
+            delay: 8 + g * 2 + beeObjs.length * 0.8,
+          });
+        }
+      });
+    }
+  }
+
+  console.log(`Foresta costruita: ${treeInstances.length} alberi, ${flowerObjs.length} fiori, ${butterflyObjs.length} farfalle, ${beeObjs.length} api`);
+
+  startGrowth();
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// ANIMAZIONE DI CRESCITA
+// ANIMAZIONE DI CRESCITA — alberi, fiori, insetti
 // ════════════════════════════════════════════════════════════════════════
 
 function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
 function easeInOutSmooth(t) { return t * t * (3 - 2 * t); }
 
-function hideAllParts() {
-  if (trunk) trunk.scale.set(1, 0.001, 1);
-  branches.forEach(b => b.scale.set(0.001, 0.001, 0.001));
-  spheres.forEach(s => s.scale.set(0.001, 0.001, 0.001));
-}
-
-function animateScale(obj, fromScale, toScale, duration, easingFn, onComplete) {
-  const startTime = performance.now();
+function animateScale(obj, fromS, toS, duration, easingFn, onComplete) {
+  const start = performance.now();
   function step(now) {
-    const elapsed = (now - startTime) / 1000;
+    const elapsed = (now - start) / 1000;
     const t = Math.min(elapsed / duration, 1);
-    const eased = easingFn(t);
-    const s = fromScale + (toScale - fromScale) * eased;
+    const s = fromS + (toS - fromS) * easingFn(t);
     obj.scale.set(s, s, s);
     if (t < 1) requestAnimationFrame(step);
     else if (onComplete) onComplete();
@@ -266,67 +440,140 @@ function animateScale(obj, fromScale, toScale, duration, easingFn, onComplete) {
   requestAnimationFrame(step);
 }
 
-function animateTrunkScaleY(obj, duration) {
-  const startTime = performance.now();
+function animateTrunkY(obj, duration) {
+  const start = performance.now();
   function step(now) {
-    const elapsed = (now - startTime) / 1000;
+    const elapsed = (now - start) / 1000;
     const t = Math.min(elapsed / duration, 1);
-    const eased = easeOutCubic(t);
-    obj.scale.y = 0.001 + (1 - 0.001) * eased;
+    obj.scale.y = 0.001 + (1 - 0.001) * easeOutCubic(t);
     if (t < 1) requestAnimationFrame(step);
   }
   requestAnimationFrame(step);
 }
 
 function animateBounce(obj, duration) {
-  const overshoot = 1.30, bounceDown = 0.88, bounceUp = 1.10;
+  const overshoot = 1.30, down = 0.88, up = 1.10;
   const t1 = duration * 0.45, t2 = duration * 0.25, t3 = duration * 0.20, t4 = duration * 0.10;
   animateScale(obj, 0.001, overshoot, t1, easeOutCubic, () => {
-    animateScale(obj, overshoot, bounceDown, t2, easeInOutSmooth, () => {
-      animateScale(obj, bounceDown, bounceUp, t3, easeInOutSmooth, () => {
-        animateScale(obj, bounceUp, 1.0, t4, easeInOutSmooth);
+    animateScale(obj, overshoot, down, t2, easeInOutSmooth, () => {
+      animateScale(obj, down, up, t3, easeInOutSmooth, () => {
+        animateScale(obj, up, 1.0, t4, easeInOutSmooth);
       });
     });
   });
 }
 
-function startGrowth() {
-  hideAllParts();
-
-  const trunkDuration = 1.2;
-  const branchDuration = 0.5;
-  const branchGap = 0.05;
-  const sphereDuration = 0.45;
-  const sphereGap = 0.08;
-  const sphereStartOffset = 1.8;
+function growOneTree(tree) {
+  const { trunk, branches, spheres } = tree;
+  const trunkDuration = 1.2, branchDuration = 0.5, branchGap = 0.05;
+  const sphereDuration = 0.45, sphereGap = 0.08, sphereStartOffset = 1.8;
   const bounceFraction = 0.5;
 
-  if (trunk) animateTrunkScaleY(trunk, trunkDuration);
+  if (trunk) animateTrunkY(trunk, trunkDuration);
 
-  branches.forEach((branch, i) => {
-    setTimeout(() => {
-      animateScale(branch, 0.001, 1.0, branchDuration, easeOutCubic);
-    }, i * branchGap * 1000);
+  branches.forEach((b, i) => {
+    setTimeout(() => animateScale(b, 0.001, 1.0, branchDuration, easeOutCubic),
+      i * branchGap * 1000);
   });
 
   const totalBranchTime = branchGap * branches.length + branchDuration;
   const sphereDelay = Math.max(0, totalBranchTime - sphereStartOffset);
   const splitIndex = Math.round(spheres.length * (1 - bounceFraction));
 
-  spheres.forEach((sphere, i) => {
+  spheres.forEach((s, i) => {
     const delay = (sphereDelay + i * sphereGap) * 1000;
     setTimeout(() => {
-      if (i < splitIndex) {
-        animateScale(sphere, 0.001, 1.0, sphereDuration, easeOutCubic);
-      } else {
-        animateBounce(sphere, sphereDuration);
-      }
+      if (i < splitIndex) animateScale(s, 0.001, 1.0, sphereDuration, easeOutCubic);
+      else animateBounce(s, sphereDuration);
     }, delay);
   });
 }
 
+function bloomFlower(mesh, delay) {
+  setTimeout(() => {
+    const overshoot = 1.25, down = 0.90;
+    animateScale(mesh, 0.001, overshoot, 0.22, easeOutCubic, () => {
+      animateScale(mesh, overshoot, down, 0.10, easeInOutSmooth, () => {
+        animateScale(mesh, down, 1.0, 0.08, easeInOutSmooth);
+      });
+    });
+  }, delay * 1000);
+}
+
+const flyingAnimations = []; // { cancel: bool } per fermarle al replay
+
+function flyInsect(entry, isBeeStyle) {
+  const { mesh, home, delay } = entry;
+  const flightRadius = isBeeStyle ? 0.9 : 1.4;
+  const minH = isBeeStyle ? 0.3 : 0.8;
+  const maxH = isBeeStyle ? 1.0 : 2.2;
+  const speed = isBeeStyle ? 2.0 : 0.8;
+
+  const state = { cancelled: false };
+  flyingAnimations.push(state);
+
+  setTimeout(() => {
+    if (state.cancelled) return;
+    mesh.scale.set(0.001, 0.001, 0.001);
+    animateScale(mesh, 0.001, 1.0, 0.25, easeOutCubic, () => {
+      const angleOffset = rng() * Math.PI * 2;
+      const speedMult = 0.7 + rng() * 0.6;
+      const radiusMult = 0.6 + rng() * 0.7;
+      const baseHeight = minH + rng() * (maxH - minH);
+      let t = 0;
+      let lastTime = performance.now();
+
+      function loop(now) {
+        if (state.cancelled) return;
+        const dt = (now - lastTime) / 1000;
+        lastTime = now;
+        t += dt * speed * speedMult;
+
+        const x = home.x + Math.cos(t * 1.1 + angleOffset) * flightRadius * radiusMult;
+        const z = home.z + Math.sin(t * 0.8 + angleOffset) * flightRadius * radiusMult;
+        const y = baseHeight + Math.sin(t * 3) * (isBeeStyle ? 0.15 : 0.4);
+
+        mesh.position.set(x, y, z);
+        requestAnimationFrame(loop);
+      }
+      requestAnimationFrame(loop);
+    });
+  }, delay * 1000);
+}
+
+function startGrowth() {
+  // Reset — nascondo tutto
+  treeInstances.forEach((tree) => {
+    if (tree.trunk) tree.trunk.scale.set(1, 0.001, 1);
+    tree.branches.forEach(b => b.scale.set(0.001, 0.001, 0.001));
+    tree.spheres.forEach(s => s.scale.set(0.001, 0.001, 0.001));
+  });
+  flowerObjs.forEach(f => f.scale.set(0.001, 0.001, 0.001));
+  butterflyObjs.forEach(b => b.mesh.scale.set(0.001, 0.001, 0.001));
+  beeObjs.forEach(b => b.mesh.scale.set(0.001, 0.001, 0.001));
+
+  // Cancello eventuali animazioni di volo precedenti
+  flyingAnimations.forEach(s => s.cancelled = true);
+  flyingAnimations.length = 0;
+
+  // Avvio alberi con i loro delay
+  treeInstances.forEach((tree) => {
+    setTimeout(() => growOneTree(tree), tree.delay * 1000);
+  });
+
+  // Fiori — sbocciano sparsi nel tempo, dopo che la maggior parte degli alberi è partita
+  const flowerStartBase = 6;
+  flowerObjs.forEach((mesh, i) => {
+    bloomFlower(mesh, flowerStartBase + i * 0.15);
+  });
+
+  // Farfalle e api — con il delay già assegnato in fase di costruzione
+  butterflyObjs.forEach((entry) => flyInsect(entry, false));
+  beeObjs.forEach((entry) => flyInsect(entry, true));
+}
+
 window.restartGrowth = function() {
-  if (modelLoaded) startGrowth();
+  if (allAssetsReady) startGrowth();
 };
 
 // ════════════════════════════════════════════════════════════════════════
@@ -337,9 +584,10 @@ let arActive = false;
 let hitTestSource = null;
 let hitTestSourceRequested = false;
 let reticle = null;
-let treePlaced = false;
+let forestPlaced = false;
+let placedAnchor = null;
+let currentXRFrame = null;
 
-// Reticolo che mostra dove verrà piazzato l'albero
 const reticleGeo = new THREE.RingGeometry(0.12, 0.16, 32).rotateX(-Math.PI / 2);
 const reticleMat = new THREE.MeshBasicMaterial({ color: 0xffffff, opacity: 0.8, transparent: true });
 reticle = new THREE.Mesh(reticleGeo, reticleMat);
@@ -347,7 +595,6 @@ reticle.matrixAutoUpdate = false;
 reticle.visible = false;
 scene.add(reticle);
 
-// Verifico supporto WebXR e aggiungo il bottone AR se disponibile
 if ('xr' in navigator) {
   navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
     if (supported) {
@@ -363,14 +610,12 @@ if ('xr' in navigator) {
     } else {
       console.log('WebXR AR non supportato su questo dispositivo/browser.');
     }
-  }).catch(() => {
-    console.log('Errore nel controllo supporto WebXR.');
-  });
+  }).catch(() => console.log('Errore nel controllo supporto WebXR.'));
 }
 
 function onARSessionStart() {
   arActive = true;
-  treePlaced = false;
+  forestPlaced = false;
   placedAnchor = null;
   previewGround.visible = false;
   controls.enabled = false;
@@ -378,15 +623,10 @@ function onARSessionStart() {
   document.getElementById('replay-btn').style.display = 'none';
   document.getElementById('ar-instructions').style.display = 'block';
 
-  // Nascondo l'albero finché l'utente non tocca per piazzarlo
-  treeAnchor.visible = false;
+  forestAnchor.visible = false;
 
-  // Aggancio l'evento select DIRETTAMENTE sulla sessione XR —
-  // più affidabile del controller quando è attivo il DOM Overlay
   const session = renderer.xr.getSession();
-  if (session) {
-    session.addEventListener('select', onSelect);
-  }
+  if (session) session.addEventListener('select', onSelect);
 }
 
 function onARSessionEnd() {
@@ -400,93 +640,48 @@ function onARSessionEnd() {
   hitTestSourceRequested = false;
   hitTestSource = null;
   placedAnchor = null;
-  treePlaced = false;
+  forestPlaced = false;
 
-  treeAnchor.visible = true;
-  treeAnchor.position.set(0, 0, 0);
-  treeAnchor.quaternion.identity();
+  forestAnchor.visible = true;
+  forestAnchor.matrix.identity();
 }
 
-// Controller XR — mantenuto in scena per compatibilità futura,
-// ma l'evento select è agganciato direttamente sulla sessione (più affidabile)
-const controller = renderer.xr.getController(0);
-scene.add(controller);
-
-let placedAnchor = null;
-
-function onSelect(event) {
-  const debugEl = document.getElementById('debug-overlay');
-  if (debugEl) {
-    debugEl.style.display = 'block';
-    debugEl.textContent = `select ricevuto | arActive=${arActive} reticleVisible=${reticle.visible} treePlaced=${treePlaced} frame=${!!currentXRFrame} hitSource=${!!hitTestSource}`;
-  }
-
-  if (!arActive || !reticle.visible || treePlaced) return;
-
+function onSelect() {
+  if (!arActive || !reticle.visible || forestPlaced) return;
   const frame = currentXRFrame;
   const referenceSpace = renderer.xr.getReferenceSpace();
-
   if (!frame || !hitTestSource) return;
 
   const hitTestResults = frame.getHitTestResults(hitTestSource);
-  if (hitTestResults.length === 0) {
-    if (debugEl) debugEl.textContent += ' | NESSUN HIT TROVATO';
-    return;
-  }
-
+  if (hitTestResults.length === 0) return;
   const hit = hitTestResults[0];
 
-  // Creo un anchor reale ancorato al punto rilevato — questo è ciò che
-  // mantiene l'oggetto fermo nello spazio fisico anche se ti muovi
+  function placeStatic() {
+    forestAnchor.matrix.fromArray(reticle.matrix.elements);
+    forestAnchor.visible = true;
+    forestPlaced = true;
+    reticle.visible = false;
+    document.getElementById('ar-instructions').style.display = 'none';
+    if (allAssetsReady) startGrowth();
+  }
+
   if (hit.createAnchor) {
     hit.createAnchor().then((anchor) => {
       placedAnchor = anchor;
-      treePlaced = true;
-      treeAnchor.visible = true;
+      forestAnchor.visible = true;
+      forestPlaced = true;
       reticle.visible = false;
       document.getElementById('ar-instructions').style.display = 'none';
-      if (debugEl) debugEl.textContent += ' | ANCHOR CREATO OK';
-
-      if (modelLoaded) startGrowth();
-    }).catch((err) => {
-      console.error('Errore creazione anchor:', err);
-      if (debugEl) debugEl.textContent += ' | ANCHOR FALLITO: ' + err.message;
-      // Fallback — uso comunque la posizione statica se gli anchor non sono supportati
-      treeAnchor.position.setFromMatrixPosition(reticle.matrix);
-      treeAnchor.visible = true;
-      treePlaced = true;
-      reticle.visible = false;
-      document.getElementById('ar-instructions').style.display = 'none';
-      if (modelLoaded) startGrowth();
-    });
+      if (allAssetsReady) startGrowth();
+    }).catch(placeStatic);
   } else {
-    if (debugEl) debugEl.textContent += ' | NO createAnchor SUPPORT, fallback statico';
-    // Browser senza supporto anchors — fallback alla posizione statica
-    treeAnchor.position.setFromMatrixPosition(reticle.matrix);
-    treeAnchor.visible = true;
-    treePlaced = true;
-    reticle.visible = false;
-    document.getElementById('ar-instructions').style.display = 'none';
-    if (modelLoaded) startGrowth();
+    placeStatic();
   }
 }
 
 // ════════════════════════════════════════════════════════════════════════
 // RENDER LOOP
 // ════════════════════════════════════════════════════════════════════════
-
-let currentXRFrame = null;
-
-// Listener diagnostico — verifica se il tocco fisico arriva al browser
-// durante la sessione AR, indipendentemente da WebXR select event
-document.addEventListener('touchstart', (e) => {
-  if (!arActive) return;
-  const debugEl = document.getElementById('debug-overlay');
-  if (debugEl) {
-    debugEl.style.display = 'block';
-    debugEl.textContent = `TOUCHSTART fisico ricevuto | reticleVisible=${reticle.visible} treePlaced=${treePlaced}`;
-  }
-}, { passive: true });
 
 renderer.setAnimationLoop((timestamp, frame) => {
   currentXRFrame = frame || null;
@@ -508,11 +703,10 @@ renderer.setAnimationLoop((timestamp, frame) => {
       hitTestSourceRequested = true;
     }
 
-    if (hitTestSource && !treePlaced) {
+    if (hitTestSource && !forestPlaced) {
       const hitTestResults = frame.getHitTestResults(hitTestSource);
       if (hitTestResults.length > 0) {
-        const hit = hitTestResults[0];
-        const pose = hit.getPose(referenceSpace);
+        const pose = hitTestResults[0].getPose(referenceSpace);
         reticle.visible = true;
         reticle.matrix.fromArray(pose.transform.matrix);
       } else {
@@ -520,16 +714,11 @@ renderer.setAnimationLoop((timestamp, frame) => {
       }
     }
 
-    // Se l'albero è ancorato, aggiorno la sua posizione leggendo
-    // la pose corrente dell'anchor — questo lo mantiene fermo
-    // nello spazio fisico reale ad ogni frame.
-    // Scrivo la matrice direttamente (matrixAutoUpdate=false) per
-    // evitare instabilità numerica del ciclo decompose/recompose.
     if (placedAnchor && frame.getPose) {
       const anchorPose = frame.getPose(placedAnchor.anchorSpace, referenceSpace);
       if (anchorPose) {
-        treeAnchor.matrix.fromArray(anchorPose.transform.matrix);
-        treeAnchor.matrixWorldNeedsUpdate = true;
+        forestAnchor.matrix.fromArray(anchorPose.transform.matrix);
+        forestAnchor.matrixWorldNeedsUpdate = true;
       }
     }
   } else {
