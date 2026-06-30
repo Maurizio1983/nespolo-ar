@@ -179,6 +179,10 @@ scene.add(previewGround);
 // ════════════════════════════════════════════════════════════════════════
 
 const treeAnchor = new THREE.Group();
+treeAnchor.matrixAutoUpdate = false; // controlliamo la matrice manualmente dall'anchor XR
+
+// Scala dell'albero — 3x più grande per una presenza più imponente in AR
+const TREE_SCALE = 3.0;
 scene.add(treeAnchor);
 
 const loader = new GLTFLoader();
@@ -200,6 +204,7 @@ loader.load(
         child.receiveShadow = true;
       }
     });
+    treeRoot.scale.set(TREE_SCALE, TREE_SCALE, TREE_SCALE);
     treeAnchor.add(treeRoot);
     classifyParts(treeRoot);
     modelLoaded = true;
@@ -517,16 +522,14 @@ renderer.setAnimationLoop((timestamp, frame) => {
 
     // Se l'albero è ancorato, aggiorno la sua posizione leggendo
     // la pose corrente dell'anchor — questo lo mantiene fermo
-    // nello spazio fisico reale ad ogni frame
+    // nello spazio fisico reale ad ogni frame.
+    // Scrivo la matrice direttamente (matrixAutoUpdate=false) per
+    // evitare instabilità numerica del ciclo decompose/recompose.
     if (placedAnchor && frame.getPose) {
       const anchorPose = frame.getPose(placedAnchor.anchorSpace, referenceSpace);
       if (anchorPose) {
         treeAnchor.matrix.fromArray(anchorPose.transform.matrix);
-        treeAnchor.matrix.decompose(
-          treeAnchor.position,
-          treeAnchor.quaternion,
-          treeAnchor.scale
-        );
+        treeAnchor.matrixWorldNeedsUpdate = true;
       }
     }
   } else {
