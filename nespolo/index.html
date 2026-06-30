@@ -180,11 +180,20 @@ scene.add(previewGround);
 // ════════════════════════════════════════════════════════════════════════
 
 const TREE_SCALE = 3.0;
-const TREE_COUNT = 20;
-const FOREST_RADIUS = 6.0;       // raggio area distribuzione (in unità mondo, post-scala concettuale)
-const CLEARING_RADIUS = 1.2;     // radura centrale vuota
-const MIN_TREE_DISTANCE = 1.6;   // distanza minima tra alberi (prima della scala)
-const DELAY_STEP = 0.35;         // secondi tra l'inizio di un albero e il successivo
+const TREE_COUNT = 60;
+
+// Il piano erba esportato da Blender è 36×36 metri (raggio 18 dal centro).
+// Le posizioni vengono generate PRIMA della scala, poi moltiplicate per TREE_SCALE,
+// quindi il raggio qui sotto deve restare entro 18 / TREE_SCALE per non uscire dal piano.
+const PLANE_HALF_SIZE = 18;                                  // metà lato piano reale
+const FOREST_RADIUS = (PLANE_HALF_SIZE / TREE_SCALE) * 0.92;  // margine di sicurezza dal bordo
+const CLEARING_RADIUS = 1.0;     // radura centrale vuota (pre-scala)
+
+// La chioma dell'albero base ha un diametro reale di circa 2.2 unità;
+// scalata ×3 diventa ~6.6 unità — la distanza minima deve tenerne conto
+// per evitare sovrapposizioni visive tra chiome.
+const MIN_TREE_DISTANCE = 2.6;   // distanza minima tra alberi (pre-scala, =~7.8 post-scala)
+const DELAY_STEP = 0.18;         // secondi tra l'inizio di un albero e il successivo (ridotto per 60 alberi)
 const RANDOM_SEED = 42;
 
 // ════════════════════════════════════════════════════════════════════════
@@ -325,10 +334,10 @@ function classifyTreeParts(root) {
 }
 
 function buildForest() {
-  // ── ERBA ──────────────────────────────────────────────────────────────
+  // ── ERBA — NON scalata: il piano è già 36×36m in Blender, dimensione corretta ──
   if (loadedAssets.grass) {
     const grass = loadedAssets.grass.clone();
-    grass.scale.set(TREE_SCALE, TREE_SCALE, TREE_SCALE);
+    // Nessuna scala applicata — l'erba resta alla sua dimensione reale
     forestContent.add(grass);
   }
 
@@ -365,7 +374,7 @@ function buildForest() {
   // ── FIORI ─────────────────────────────────────────────────────────────
   if (loadedAssets.flowers) {
     const flowers = loadedAssets.flowers.clone(true);
-    flowers.scale.set(TREE_SCALE, TREE_SCALE, TREE_SCALE);
+    // Nessuna scala — i fiori sono già dimensionati correttamente rispetto al piano
     forestContent.add(flowers);
     flowerObjs = [];
     flowers.traverse((child) => {
@@ -378,12 +387,12 @@ function buildForest() {
   if (loadedAssets.butterflies) {
     for (let g = 0; g < 2; g++) {
       const bfGroup = loadedAssets.butterflies.clone(true);
-      bfGroup.scale.set(TREE_SCALE, TREE_SCALE, TREE_SCALE);
+      // Nessuna scala — già dimensionate correttamente
       forestContent.add(bfGroup);
       bfGroup.traverse((child) => {
         if (child.isMesh) {
           const angle = rng() * Math.PI * 2;
-          const r = (2 + rng() * (FOREST_RADIUS - 2));
+          const r = (2 + rng() * (PLANE_HALF_SIZE * 0.85 - 2));
           butterflyObjs.push({
             mesh: child,
             home: new THREE.Vector3(Math.cos(angle) * r, 0, Math.sin(angle) * r),
@@ -399,12 +408,12 @@ function buildForest() {
   if (loadedAssets.bees) {
     for (let g = 0; g < 2; g++) {
       const beeGroup = loadedAssets.bees.clone(true);
-      beeGroup.scale.set(TREE_SCALE, TREE_SCALE, TREE_SCALE);
+      // Nessuna scala — già dimensionate correttamente
       forestContent.add(beeGroup);
       beeGroup.traverse((child) => {
         if (child.isMesh) {
           const angle = rng() * Math.PI * 2;
-          const r = (1.5 + rng() * (FOREST_RADIUS - 1.5));
+          const r = (1.5 + rng() * (PLANE_HALF_SIZE * 0.85 - 1.5));
           beeObjs.push({
             mesh: child,
             home: new THREE.Vector3(Math.cos(angle) * r, 0, Math.sin(angle) * r),
