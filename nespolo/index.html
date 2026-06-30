@@ -184,12 +184,24 @@ const TREE_COUNT = 60;
 const DELAY_STEP = 0.18;
 const RANDOM_SEED = 42;
 
-// Queste vengono calcolate DOPO il caricamento del Grass_Plane.glb,
-// leggendo le sue dimensioni reali — niente più valori indovinati.
-let PLANE_HALF_SIZE = 18;     // valore di fallback, sovrascritto in measureGroundPlane()
-let FOREST_RADIUS = 5.5;
-let CLEARING_RADIUS = 1.0;
-let MIN_TREE_DISTANCE = 2.6;  // diametro chioma base (~2.2) × TREE_SCALE, con margine
+// ── MANOPOLA PRINCIPALE ─────────────────────────────────────────────────
+// Distanza media (in unità mondo) fra alberi vicini. Da qui si deriva TUTTO:
+// il raggio della foresta e quanto va ingrandito il piano erba.
+// Più alto = foresta più rada e ampia. Più basso = più fitta e compatta.
+// In AR 1 unità ≈ 1 metro: TREE_SPACING=4 → alberi a ~4 m l'uno dall'altro.
+const TREE_SPACING = 4.0;
+
+// Raggio foresta derivato dalla spaziatura: area per albero = spacing²
+//   → R = spacing · √(N/π).  Garantisce che i 60 alberi ci stiano sempre.
+const FOREST_RADIUS = TREE_SPACING * Math.sqrt(TREE_COUNT / Math.PI);
+const CLEARING_RADIUS = 1.5;       // piccola radura centrale (punto di partenza onda)
+const JITTER_FRAC = 0.45;          // disordine organico (0 = spirale perfetta)
+
+// PLANE_HALF_SIZE e PLANE_SCALE vengono calcolati in measureGroundPlane(),
+// che ora INGRANDISCE il piano per contenere la foresta invece di
+// rimpicciolire la foresta per stare nel piano.
+let PLANE_HALF_SIZE = FOREST_RADIUS / 0.9;  // fallback finché non si misura il GLB
+let PLANE_SCALE = 1.0;
 
 // ════════════════════════════════════════════════════════════════════════
 // RNG SEEDATO — per distribuzione riproducibile
@@ -206,29 +218,30 @@ function mulberry32(seed) {
 const rng = mulberry32(RANDOM_SEED);
 
 // ════════════════════════════════════════════════════════════════════════
-// GENERAZIONE POSIZIONI ALBERI — distribuzione organica Poisson-disc semplificata
+// GENERAZIONE POSIZIONI ALBERI — spirale di Vogel (phyllotaxis) in spazio MONDO
+// Garanzia: produce SEMPRE esattamente `count` alberi, uniformi e organici.
+// Niente saturazione, niente conteggi variabili tra un caricamento e l'altro.
+// Le posizioni sono già in spazio mondo: NON vanno più moltiplicate per TREE_SCALE.
 // ════════════════════════════════════════════════════════════════════════
 
-function generateTreePositions(count, radius, clearing, minDist) {
+function generateTreePositions(count, worldRadius, clearing, jitterFrac, spacing) {
   const positions = [];
-  let attempts = 0;
-  const maxAttempts = count * 40;
+  const golden = Math.PI * (3 - Math.sqrt(5)); // angolo aureo ≈ 137.5°
 
-  while (positions.length < count && attempts < maxAttempts) {
-    attempts++;
-    const angle = rng() * Math.PI * 2;
-    const r = Math.sqrt(rng()) * radius;
-    const x = Math.cos(angle) * r;
-    const z = Math.sin(angle) * r;
+  for (let i = 0; i < count; i++) {
+    // raggio ∝ √(i/N) → densità uniforme sull'area del disco
+    const rNorm = Math.sqrt((i + 0.5) / count);
+    const r = clearing + rNorm * (worldRadius - clearing);
+    const theta = i * golden;
 
-    if (Math.sqrt(x * x + z * z) < clearing) continue;
+    // jitter proporzionale alla spaziatura: rompe la regolarità della spirale
+    const jr = (rng() - 0.5) * spacing * jitterFrac;
+    const jt = (rng() - 0.5) * jitterFrac * 0.5;
 
-    let tooClose = false;
-    for (const p of positions) {
-      const dx = p.x - x, dz = p.z - z;
-      if (Math.sqrt(dx * dx + dz * dz) < minDist) { tooClose = true; break; }
-    }
-    if (!tooClose) positions.push({ x, z });
+    positions.push({
+      x: Math.cos(theta + jt) * (r + jr),
+      z: Math.sin(theta + jt) * (r + jr),
+    });
   }
 
   // Ordino dal centro verso l'esterno — la crescita si espande come un'onda
@@ -334,28 +347,36 @@ function measureGroundPlane(grassObj) {
   const size = new THREE.Vector3();
   box.getSize(size);
 
-  // Il piano è nel piano XZ — prendo il lato più corto per restare
-  // sempre dentro i bordi anche se non è perfettamente quadrato
-  const halfSize = Math.min(size.x, size.z) / 2;
+  // Lato più corto del piano nativo (XZ), come semi-dimensione
+  const nativeHalf = Math.min(size.x, size.z) / 2;
 
-  PLANE_HALF_SIZE = halfSize;
-  FOREST_RADIUS = (PLANE_HALF_SIZE / TREE_SCALE) * 0.88; // margine di sicurezza dal bordo
-  CLEARING_RADIUS = Math.min(1.0, FOREST_RADIUS * 0.15);
+  // Quanto deve essere grande il piano per contenere la foresta + margine bordo
+  const requiredHalf = FOREST_RADIUS / 0.9;
 
-  console.log(`Piano erba misurato: ${size.x.toFixed(2)} x ${size.z.toFixed(2)} → FOREST_RADIUS=${FOREST_RADIUS.toFixed(2)}`);
+  // INGRANDISCO il piano se serve (non lo rimpicciolisco mai sotto il nativo)
+  PLANE_SCALE = Math.max(1.0, requiredHalf / nativeHalf);
+  PLANE_HALF_SIZE = nativeHalf * PLANE_SCALE;
+
+  grassObj.scale.multiplyScalar(PLANE_SCALE);
+
+  console.log(
+    `Piano nativo: ${size.x.toFixed(1)}×${size.z.toFixed(1)} (half ${nativeHalf.toFixed(1)}) | ` +
+    `FOREST_RADIUS=${FOREST_RADIUS.toFixed(1)} → PLANE_SCALE=${PLANE_SCALE.toFixed(2)} → ` +
+    `piano finale half=${PLANE_HALF_SIZE.toFixed(1)}`
+  );
 }
 
 function buildForest() {
-  // ── ERBA — misuro le dimensioni reali PRIMA di tutto il resto ───────────
+  // ── ERBA — misuro e INGRANDISCO il piano PRIMA di tutto il resto ─────────
   if (loadedAssets.grass) {
     const grass = loadedAssets.grass.clone();
-    measureGroundPlane(grass);
+    measureGroundPlane(grass);   // imposta PLANE_SCALE e scala il piano
     forestContent.add(grass);
   }
 
-  // Ora che conosco le dimensioni reali, genero le posizioni degli alberi
+  // Genero le posizioni in spazio mondo (già scalate, NON moltiplicare per TREE_SCALE)
   treePositions = generateTreePositions(
-    TREE_COUNT, FOREST_RADIUS, CLEARING_RADIUS, MIN_TREE_DISTANCE
+    TREE_COUNT, FOREST_RADIUS, CLEARING_RADIUS, JITTER_FRAC, TREE_SPACING
   );
 
   // ── ALBERI — uno per posizione generata ─────────────────────────────────
@@ -372,7 +393,7 @@ function buildForest() {
       });
 
       treeClone.scale.set(TREE_SCALE, TREE_SCALE, TREE_SCALE);
-      treeClone.position.set(pos.x * TREE_SCALE, 0, pos.z * TREE_SCALE);
+      treeClone.position.set(pos.x, 0, pos.z); // posizioni già in spazio mondo
       treeClone.rotation.y = rng() * Math.PI * 2;
 
       const scaleVariation = 0.8 + rng() * 0.4; // 0.8 - 1.2
@@ -391,7 +412,10 @@ function buildForest() {
   // ── FIORI ─────────────────────────────────────────────────────────────
   if (loadedAssets.flowers) {
     const flowers = loadedAssets.flowers.clone(true);
-    // Nessuna scala — i fiori sono già dimensionati correttamente rispetto al piano
+    // Scalo col piano così si distribuiscono sull'area ingrandita.
+    // NOTA: questo aumenta anche la dimensione dei fiori — se risultano troppo
+    // grossi, sostituire con redistribuzione procedurale a dimensione fissa.
+    flowers.scale.multiplyScalar(PLANE_SCALE);
     forestContent.add(flowers);
     flowerObjs = [];
     flowers.traverse((child) => {
