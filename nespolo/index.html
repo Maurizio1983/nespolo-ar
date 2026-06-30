@@ -375,6 +375,13 @@ function onARSessionStart() {
 
   // Nascondo l'albero finché l'utente non tocca per piazzarlo
   treeAnchor.visible = false;
+
+  // Aggancio l'evento select DIRETTAMENTE sulla sessione XR —
+  // più affidabile del controller quando è attivo il DOM Overlay
+  const session = renderer.xr.getSession();
+  if (session) {
+    session.addEventListener('select', onSelect);
+  }
 }
 
 function onARSessionEnd() {
@@ -395,11 +402,9 @@ function onARSessionEnd() {
   treeAnchor.quaternion.identity();
 }
 
-// Gestione del tocco per piazzare l'albero — creo un ANCHOR reale,
-// non una posizione statica, così il sistema di tracking del telefono
-// continua a seguire quel punto nello spazio fisico nel tempo
+// Controller XR — mantenuto in scena per compatibilità futura,
+// ma l'evento select è agganciato direttamente sulla sessione (più affidabile)
 const controller = renderer.xr.getController(0);
-controller.addEventListener('select', onSelect);
 scene.add(controller);
 
 let placedAnchor = null;
@@ -408,7 +413,7 @@ function onSelect(event) {
   const debugEl = document.getElementById('debug-overlay');
   if (debugEl) {
     debugEl.style.display = 'block';
-    debugEl.textContent = `tap ricevuto | arActive=${arActive} reticleVisible=${reticle.visible} treePlaced=${treePlaced} frame=${!!currentXRFrame} hitSource=${!!hitTestSource}`;
+    debugEl.textContent = `select ricevuto | arActive=${arActive} reticleVisible=${reticle.visible} treePlaced=${treePlaced} frame=${!!currentXRFrame} hitSource=${!!hitTestSource}`;
   }
 
   if (!arActive || !reticle.visible || treePlaced) return;
@@ -466,6 +471,17 @@ function onSelect(event) {
 // ════════════════════════════════════════════════════════════════════════
 
 let currentXRFrame = null;
+
+// Listener diagnostico — verifica se il tocco fisico arriva al browser
+// durante la sessione AR, indipendentemente da WebXR select event
+document.addEventListener('touchstart', (e) => {
+  if (!arActive) return;
+  const debugEl = document.getElementById('debug-overlay');
+  if (debugEl) {
+    debugEl.style.display = 'block';
+    debugEl.textContent = `TOUCHSTART fisico ricevuto | reticleVisible=${reticle.visible} treePlaced=${treePlaced}`;
+  }
+}, { passive: true });
 
 renderer.setAnimationLoop((timestamp, frame) => {
   currentXRFrame = frame || null;
