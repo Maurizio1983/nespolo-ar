@@ -32,7 +32,7 @@
 
   #replay-btn {
     position: fixed;
-    bottom: 24px;
+    bottom: 90px;
     left: 50%;
     transform: translateX(-50%);
     background: rgba(255,255,255,0.95);
@@ -390,8 +390,11 @@ function onARSessionEnd() {
   treeAnchor.position.set(0, 0, 0);
 }
 
-// Gestione del tocco per piazzare l'albero
-renderer.domElement.addEventListener('select', onSelect);
+// Gestione del tocco per piazzare l'albero — uso il controller XR, non il DOM
+const controller = renderer.xr.getController(0);
+controller.addEventListener('select', onSelect);
+scene.add(controller);
+
 function onSelect() {
   if (arActive && reticle.visible && !treePlaced) {
     treeAnchor.position.setFromMatrixPosition(reticle.matrix);
