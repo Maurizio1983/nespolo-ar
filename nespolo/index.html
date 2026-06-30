@@ -181,19 +181,15 @@ scene.add(previewGround);
 
 const TREE_SCALE = 3.0;
 const TREE_COUNT = 60;
+const DELAY_STEP = 0.18;
+const RANDOM_SEED = 42;
 
-// Il piano erba esportato da Blender è 36×36 metri (raggio 18 dal centro).
-// Le posizioni vengono generate PRIMA della scala, poi moltiplicate per TREE_SCALE,
-// quindi il raggio qui sotto deve restare entro 18 / TREE_SCALE per non uscire dal piano.
-const PLANE_HALF_SIZE = 18;                                  // metà lato piano reale
-const FOREST_RADIUS = (PLANE_HALF_SIZE / TREE_SCALE) * 0.92;  // margine di sicurezza dal bordo
-const CLEARING_RADIUS = 1.0;     // radura centrale vuota (pre-scala)
-
-// La chioma dell'albero base ha un diametro reale di circa 2.2 unità;
-// scalata ×3 diventa ~6.6 unità — la distanza minima deve tenerne conto
-// per evitare sovrapposizioni visive tra chiome.
-const MIN_TREE_DISTANCE = 2.6;   // distanza minima tra alberi (pre-scala, =~7.8 post-scala)
-const DELAY_STEP = 0.18;         // secondi tra l'inizio di un albero e il successivo (ridotto per 60 alberi)
+// Queste vengono calcolate DOPO il caricamento del Grass_Plane.glb,
+// leggendo le sue dimensioni reali — niente più valori indovinati.
+let PLANE_HALF_SIZE = 18;     // valore di fallback, sovrascritto in measureGroundPlane()
+let FOREST_RADIUS = 5.5;
+let CLEARING_RADIUS = 1.0;
+let MIN_TREE_DISTANCE = 2.6;  // diametro chioma base (~2.2) × TREE_SCALE, con margine
 const RANDOM_SEED = 42;
 
 // ════════════════════════════════════════════════════════════════════════
@@ -241,9 +237,9 @@ function generateTreePositions(count, radius, clearing, minDist) {
   return positions;
 }
 
-const treePositions = generateTreePositions(
-  TREE_COUNT, FOREST_RADIUS, CLEARING_RADIUS, MIN_TREE_DISTANCE
-);
+// treePositions viene popolato in buildForest(), DOPO aver misurato
+// le dimensioni reali del piano erba caricato — vedi measureGroundPlane()
+let treePositions = [];
 
 // ════════════════════════════════════════════════════════════════════════
 // GRUPPO RADICE — verrà posizionato dove l'utente tocca in AR
@@ -333,13 +329,35 @@ function classifyTreeParts(root) {
   return { trunk, branches, spheres };
 }
 
+// ── MISURA IL PIANO ERBA REALE — niente più valori indovinati ────────────
+function measureGroundPlane(grassObj) {
+  const box = new THREE.Box3().setFromObject(grassObj);
+  const size = new THREE.Vector3();
+  box.getSize(size);
+
+  // Il piano è nel piano XZ — prendo il lato più corto per restare
+  // sempre dentro i bordi anche se non è perfettamente quadrato
+  const halfSize = Math.min(size.x, size.z) / 2;
+
+  PLANE_HALF_SIZE = halfSize;
+  FOREST_RADIUS = (PLANE_HALF_SIZE / TREE_SCALE) * 0.88; // margine di sicurezza dal bordo
+  CLEARING_RADIUS = Math.min(1.0, FOREST_RADIUS * 0.15);
+
+  console.log(`Piano erba misurato: ${size.x.toFixed(2)} x ${size.z.toFixed(2)} → FOREST_RADIUS=${FOREST_RADIUS.toFixed(2)}`);
+}
+
 function buildForest() {
-  // ── ERBA — NON scalata: il piano è già 36×36m in Blender, dimensione corretta ──
+  // ── ERBA — misuro le dimensioni reali PRIMA di tutto il resto ───────────
   if (loadedAssets.grass) {
     const grass = loadedAssets.grass.clone();
-    // Nessuna scala applicata — l'erba resta alla sua dimensione reale
+    measureGroundPlane(grass);
     forestContent.add(grass);
   }
+
+  // Ora che conosco le dimensioni reali, genero le posizioni degli alberi
+  treePositions = generateTreePositions(
+    TREE_COUNT, FOREST_RADIUS, CLEARING_RADIUS, MIN_TREE_DISTANCE
+  );
 
   // ── ALBERI — uno per posizione generata ─────────────────────────────────
   if (loadedAssets.tree) {
