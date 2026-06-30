@@ -204,12 +204,14 @@ function classifyParts(root) {
     }
   });
 
-  // Ordino rami e sfere per distanza dal centro (dal più vicino al più lontano)
+  // Rami ordinati per distanza dal centro (dal più vicino al più lontano)
   const distFromCenter = (obj) => {
     return Math.sqrt(obj.position.x ** 2 + obj.position.z ** 2);
   };
   branches.sort((a, b) => distFromCenter(a) - distFromCenter(b));
-  spheres.sort((a, b) => distFromCenter(a) - distFromCenter(b));
+
+  // Sfere ordinate dal basso verso l'alto (altezza Y crescente)
+  spheres.sort((a, b) => a.position.y - b.position.y);
 
   console.log(`Parti classificate — Trunk: ${trunk ? 1 : 0}, Branches: ${branches.length}, Spheres: ${spheres.length}`);
 }
@@ -290,7 +292,7 @@ function startGrowth() {
   const branchGap = 0.05;
   const sphereDuration = 0.45;
   const sphereGap = 0.08;
-  const sphereStartOffset = 1.0; // anticipo richiesto
+  const sphereStartOffset = 1.8; // anticipo aumentato — sfere iniziano molto prima
   const bounceFraction = 0.5;
 
   // 1. TRONCO
