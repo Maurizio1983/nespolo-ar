@@ -104,6 +104,7 @@
 </div>
 
 <div id="ar-instructions">Punta il telefono verso il pavimento e tocca lo schermo per piantare l'albero</div>
+<div id="debug-overlay" style="display:none; position:fixed; top:70px; left:8px; right:8px; background:rgba(255,0,0,0.85); color:white; font-size:11px; padding:8px; border-radius:8px; z-index:50; font-family:monospace;"></div>
 
 <button id="replay-btn" onclick="restartGrowth()">↻ Rivivi la crescita</button>
 
@@ -404,16 +405,24 @@ scene.add(controller);
 let placedAnchor = null;
 
 function onSelect(event) {
+  const debugEl = document.getElementById('debug-overlay');
+  if (debugEl) {
+    debugEl.style.display = 'block';
+    debugEl.textContent = `tap ricevuto | arActive=${arActive} reticleVisible=${reticle.visible} treePlaced=${treePlaced} frame=${!!currentXRFrame} hitSource=${!!hitTestSource}`;
+  }
+
   if (!arActive || !reticle.visible || treePlaced) return;
 
-  const frame = event.frame;
+  const frame = currentXRFrame;
   const referenceSpace = renderer.xr.getReferenceSpace();
-  const session = renderer.xr.getSession();
 
   if (!frame || !hitTestSource) return;
 
   const hitTestResults = frame.getHitTestResults(hitTestSource);
-  if (hitTestResults.length === 0) return;
+  if (hitTestResults.length === 0) {
+    if (debugEl) debugEl.textContent += ' | NESSUN HIT TROVATO';
+    return;
+  }
 
   const hit = hitTestResults[0];
 
@@ -426,10 +435,12 @@ function onSelect(event) {
       treeAnchor.visible = true;
       reticle.visible = false;
       document.getElementById('ar-instructions').style.display = 'none';
+      if (debugEl) debugEl.textContent += ' | ANCHOR CREATO OK';
 
       if (modelLoaded) startGrowth();
     }).catch((err) => {
       console.error('Errore creazione anchor:', err);
+      if (debugEl) debugEl.textContent += ' | ANCHOR FALLITO: ' + err.message;
       // Fallback — uso comunque la posizione statica se gli anchor non sono supportati
       treeAnchor.position.setFromMatrixPosition(reticle.matrix);
       treeAnchor.visible = true;
@@ -439,6 +450,7 @@ function onSelect(event) {
       if (modelLoaded) startGrowth();
     });
   } else {
+    if (debugEl) debugEl.textContent += ' | NO createAnchor SUPPORT, fallback statico';
     // Browser senza supporto anchors — fallback alla posizione statica
     treeAnchor.position.setFromMatrixPosition(reticle.matrix);
     treeAnchor.visible = true;
@@ -453,7 +465,11 @@ function onSelect(event) {
 // RENDER LOOP
 // ════════════════════════════════════════════════════════════════════════
 
+let currentXRFrame = null;
+
 renderer.setAnimationLoop((timestamp, frame) => {
+  currentXRFrame = frame || null;
+
   if (arActive && frame) {
     const referenceSpace = renderer.xr.getReferenceSpace();
     const session = renderer.xr.getSession();
