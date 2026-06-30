@@ -346,7 +346,7 @@ if ('xr' in navigator) {
   navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
     if (supported) {
       const arButton = ARButton.createButton(renderer, {
-        requiredFeatures: ['hit-test'],
+        requiredFeatures: ['hit-test', 'anchors'],
         optionalFeatures: ['dom-overlay'],
         domOverlay: { root: document.body }
       });
@@ -365,6 +365,7 @@ if ('xr' in navigator) {
 function onARSessionStart() {
   arActive = true;
   treePlaced = false;
+  placedAnchor = null;
   previewGround.visible = false;
   controls.enabled = false;
   document.getElementById('info-panel').style.display = 'none';
@@ -385,24 +386,65 @@ function onARSessionEnd() {
   reticle.visible = false;
   hitTestSourceRequested = false;
   hitTestSource = null;
+  placedAnchor = null;
+  treePlaced = false;
 
   treeAnchor.visible = true;
   treeAnchor.position.set(0, 0, 0);
+  treeAnchor.quaternion.identity();
 }
 
-// Gestione del tocco per piazzare l'albero — uso il controller XR, non il DOM
+// Gestione del tocco per piazzare l'albero — creo un ANCHOR reale,
+// non una posizione statica, così il sistema di tracking del telefono
+// continua a seguire quel punto nello spazio fisico nel tempo
 const controller = renderer.xr.getController(0);
 controller.addEventListener('select', onSelect);
 scene.add(controller);
 
-function onSelect() {
-  if (arActive && reticle.visible && !treePlaced) {
+let placedAnchor = null;
+
+function onSelect(event) {
+  if (!arActive || !reticle.visible || treePlaced) return;
+
+  const frame = event.frame;
+  const referenceSpace = renderer.xr.getReferenceSpace();
+  const session = renderer.xr.getSession();
+
+  if (!frame || !hitTestSource) return;
+
+  const hitTestResults = frame.getHitTestResults(hitTestSource);
+  if (hitTestResults.length === 0) return;
+
+  const hit = hitTestResults[0];
+
+  // Creo un anchor reale ancorato al punto rilevato — questo è ciò che
+  // mantiene l'oggetto fermo nello spazio fisico anche se ti muovi
+  if (hit.createAnchor) {
+    hit.createAnchor().then((anchor) => {
+      placedAnchor = anchor;
+      treePlaced = true;
+      treeAnchor.visible = true;
+      reticle.visible = false;
+      document.getElementById('ar-instructions').style.display = 'none';
+
+      if (modelLoaded) startGrowth();
+    }).catch((err) => {
+      console.error('Errore creazione anchor:', err);
+      // Fallback — uso comunque la posizione statica se gli anchor non sono supportati
+      treeAnchor.position.setFromMatrixPosition(reticle.matrix);
+      treeAnchor.visible = true;
+      treePlaced = true;
+      reticle.visible = false;
+      document.getElementById('ar-instructions').style.display = 'none';
+      if (modelLoaded) startGrowth();
+    });
+  } else {
+    // Browser senza supporto anchors — fallback alla posizione statica
     treeAnchor.position.setFromMatrixPosition(reticle.matrix);
     treeAnchor.visible = true;
     treePlaced = true;
     reticle.visible = false;
     document.getElementById('ar-instructions').style.display = 'none';
-
     if (modelLoaded) startGrowth();
   }
 }
@@ -438,6 +480,21 @@ renderer.setAnimationLoop((timestamp, frame) => {
         reticle.matrix.fromArray(pose.transform.matrix);
       } else {
         reticle.visible = false;
+      }
+    }
+
+    // Se l'albero è ancorato, aggiorno la sua posizione leggendo
+    // la pose corrente dell'anchor — questo lo mantiene fermo
+    // nello spazio fisico reale ad ogni frame
+    if (placedAnchor && frame.getPose) {
+      const anchorPose = frame.getPose(placedAnchor.anchorSpace, referenceSpace);
+      if (anchorPose) {
+        treeAnchor.matrix.fromArray(anchorPose.transform.matrix);
+        treeAnchor.matrix.decompose(
+          treeAnchor.position,
+          treeAnchor.quaternion,
+          treeAnchor.scale
+        );
       }
     }
   } else {
